@@ -1,0 +1,1174 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>深度偽造檢測器</title>
+    <!-- 載入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 修正：載入標準 Lucide 圖標庫 (非 React 版本) -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* 使用 Inter 字體 */
+        body {
+            font-family: 'Inter', 'Noto Sans TC', sans-serif;
+        }
+        /* 自定義 SVG 環形進度條的樣式 */
+        .progress-ring__circle {
+            transition: stroke-dashoffset 0.5s ease-in-out;
+            transform: rotate(-90deg);
+            transform-origin: 50% 50%;
+        }
+        /* 底部導航欄的樣式 */
+        .nav-button {
+            transition: background-color 0.2s, color 0.2s;
+        }
+        .nav-button.active {
+            color: #2563EB; /* blue-600 */
+        }
+        /* 模擬波形動畫 */
+        .waveform-bar {
+            animation: wave 1s ease-in-out infinite;
+            border-radius: 9999px; /* 圓角 */
+        }
+        @keyframes wave {
+            0%, 100% { height: 20%; opacity: 0.6; }
+            50% { height: 100%; opacity: 1; }
+        }
+        /* 經驗值條動畫 */
+        .xp-bar-fill {
+            transition: width 0.5s ease-out;
+        }
+        /* 答對動畫 */
+        @keyframes pop {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+        .animate-pop {
+            animation: pop 0.3s ease-in-out;
+        }
+        /* 看板娘浮動動畫 */
+        @keyframes float {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-5px); }
+            100% { transform: translateY(0px); }
+        }
+        .mascot-float {
+            animation: float 3s ease-in-out infinite;
+        }
+        /* 對話框淡入淡出 */
+        .fade-in {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        /* 隱藏檔案輸入框 */
+        .hidden-input {
+            display: none;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4 pt-32"> <!-- 增加上方 padding 給更大的看板娘 -->
+
+    <div class="w-full max-w-md h-[80vh] max-h-[900px] relative">
+        
+        <!-- 看板娘區域 (Mascot Area) -->
+        <!-- 固定圖片，不可點擊更改 -->
+        <div class="absolute -top-36 right-0 z-20 flex flex-col items-end pointer-events-none"> <!-- 調整位置 -->
+            <!-- 對話氣泡 -->
+            <div id="mascot-bubble" class="bg-white border-2 border-blue-500 text-gray-800 text-xs font-bold py-2 px-3 rounded-2xl rounded-tr-none shadow-lg mb-1 max-w-[160px] text-center fade-in transform transition-all duration-300 origin-bottom-right relative mr-8">
+                我是您的防詐小幫手！
+            </div>
+            
+            <!-- 看板娘圖片 -->
+            <div class="relative">
+                <!-- 
+                    重要：請確保您的圖片檔案 'mascot_normal.png' 和 'mascot_thinking.png' 
+                    與此 html 檔案位於同一資料夾中。
+                -->
+                <img id="mascot-img" 
+                     src="mascot_normal.png" 
+                     alt="防詐看板娘" 
+                     class="w-40 h-40 object-contain mascot-float filter drop-shadow-lg" 
+                     onerror="this.src='https://api.dicebear.com/7.x/avataaars/svg?seed=Felix&clothing=blazerAndShirt&eyes=happy'">
+                     <!-- 尺寸從 w-24 h-24 加大到 w-40 h-40 -->
+            </div>
+        </div>
+
+        <!-- 主卡片 -->
+        <!-- 確保父容器有 relative，以便子元素 absolute 定位能覆蓋整個卡片 -->
+        <div class="bg-white rounded-2xl shadow-xl overflow-hidden flex flex-col h-full relative z-10">
+            <header class="bg-blue-600 p-6 text-white text-center flex-shrink-0">
+                <h1 class="text-2xl font-bold mr-16">深度偽造檢測器</h1> <!-- 增加右側留白給看板娘 -->
+                <p class="text-sm opacity-90 mt-1 mr-16">保護家人，遠離詐騙</p>
+            </header>
+
+            <!-- 主內容區域 -->
+            <main class="flex-grow overflow-y-auto p-6 md:p-8 relative">
+
+                <!-- 1. 影片檢測 (Video Detection Tab) -->
+                <div id="video-tab-content">
+                    <!-- 1.1 上傳狀態 (Initial State) -->
+                    <div id="upload-state">
+                        <p class="text-gray-700 text-center mb-6">
+                            您收到可疑的親人求救影片嗎？<br>請上傳影片，讓我們為您分析。
+                        </p>
+                        <!-- 檔案上傳按鈕 -->
+                        <label for="video-upload" class="cursor-pointer w-full flex flex-col items-center justify-center bg-blue-50 hover:bg-blue-100 border-2 border-blue-300 border-dashed rounded-lg p-10 text-center transition duration-300">
+                            <i data-lucide="upload-cloud" class="w-16 h-16 text-blue-500"></i>
+                            <span class="mt-4 text-lg font-medium text-blue-700">點擊此處上傳影片</span>
+                            <span class="text-sm text-gray-500 mt-1">（或將影片拖放到此處）</span>
+                        </label>
+                        <input type="file" id="video-upload" class="hidden" accept="video/*">
+                    </div>
+
+                    <!-- 1.2 分析中狀態 (Loading State) -->
+                    <div id="loading-state" class="hidden">
+                        <div class="flex flex-col items-center justify-center py-12">
+                            <!-- 旋轉動畫 -->
+                            <svg class="animate-spin h-16 w-16 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <h2 class="text-xl font-semibold text-gray-800 mt-6">AI 正在全力分析中...</h2>
+                            <p class="text-gray-600 mt-2">請稍候，數秒內將提供您分析結果。</p>
+                        </div>
+                    </div>
+
+                    <!-- 1.3 結果狀態 (Results State) -->
+                    <div id="results-state" class="hidden">
+                        <div class="text-center">
+                            <h2 class="text-xl font-semibold text-gray-800 mb-4">分析結果報告</h2>
+                            
+                            <!-- 環形進度條 (分數) -->
+                            <div class="relative w-48 h-48 mx-auto mb-4">
+                                <svg class="w-full h-full" viewBox="0 0 120 120">
+                                    <!-- 背景環 -->
+                                    <circle class="text-gray-200" stroke-width="12" stroke="currentColor" fill="transparent" r="54" cx="60" cy="60" />
+                                    <!-- 進度環 -->
+                                    <circle id="progress-circle" class="progress-ring__circle text-red-500" stroke-width="12" stroke-linecap="round" stroke="currentColor" fill="transparent" r="54" cx="60" cy="60" />
+                                </svg>
+                                <div class="absolute inset-0 flex flex-col items-center justify-center">
+                                    <span class="text-xs text-gray-500 font-medium mb-1">AI 可能性</span>
+                                    <span id="probability-score" class="text-5xl font-bold text-red-600">85%</span>
+                                    <span id="authenticity-text" class="text-sm font-bold text-red-600 mt-1">極高風險</span>
+                                </div>
+                            </div>
+
+                            <!-- 警告訊息 -->
+                            <div id="warning-box" class="bg-red-50 border border-red-300 text-red-800 rounded-lg p-4 mb-6">
+                                <div class="flex items-center">
+                                    <i data-lucide="alert-triangle" class="w-6 h-6 mr-3 flex-shrink-0"></i>
+                                    <p class="font-semibold text-left text-sm"><strong>警告：</strong> 這段影片極有可能是偽造的。請務必直接打電話向本人求證！</p>
+                                </div>
+                            </div>
+
+                            <!-- 成功訊息 (備用) -->
+                            <div id="success-box" class="hidden bg-green-50 border border-green-300 text-green-800 rounded-lg p-4 mb-6">
+                                <div class="flex items-center">
+                                    <i data-lucide="shield-check" class="w-6 h-6 mr-3 flex-shrink-0"></i>
+                                    <p class="font-semibold text-left text-sm">AI 痕跡不明顯，但詐騙手法多變，仍請保持警覺。</p>
+                                </div>
+                            </div>
+
+                            <!-- 可疑點分析 -->
+                            <div class="text-left">
+                                <h3 class="text-lg font-semibold text-gray-800 mb-3 flex items-center">
+                                    <i data-lucide="search-check" class="w-5 h-5 mr-2 text-blue-600"></i>
+                                    檢測詳情
+                                </h3>
+                                <ul id="analysis-details" class="space-y-3">
+                                    <!-- JS 將會動態填入這裡 -->
+                                </ul>
+                            </div>
+
+                            <!-- 重新分析按鈕 -->
+                            <button id="reset-button" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg mt-8 transition duration-300 shadow-md">
+                                檢測另一部影片
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. 通話防護 (Call Protection Tab) -->
+                <div id="call-tab-content" class="hidden">
+                    <div class="flex flex-col items-center text-center">
+                        <i id="shield-icon" data-lucide="shield-off" class="w-24 h-24 text-gray-400"></i>
+                        <h2 id="protection-status-text" class="text-2xl font-bold text-gray-500 mt-4">防護已關閉</h2>
+                        <p class="text-gray-600 mt-2 mb-8">開啟後，AI 將在背景分析可疑來電，並及時向您發出警示。</p>
+
+                        <!-- 啟動按鈕 -->
+                        <button id="toggle-protection-button" class="w-full bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-4 px-4 rounded-lg transition duration-300 flex items-center justify-center text-lg shadow-sm">
+                            <i data-lucide="power" class="w-6 h-6 mr-2"></i>
+                            <span>開啟防護</span>
+                        </button>
+                        
+                        <!-- 演示按鈕 -->
+                        <button id="demo-call-button" class="w-full mt-4 bg-white border border-blue-500 text-blue-600 hover:bg-blue-50 font-bold py-3 px-4 rounded-lg transition duration-300 flex items-center justify-center shadow-sm">
+                            <i data-lucide="phone-call" class="w-5 h-5 mr-2"></i>
+                            <span>模擬來電分析演示</span>
+                        </button>
+                        <p class="text-xs text-gray-400 mt-2">點擊上方按鈕體驗通話中的即時 AI 助手</p>
+                    </div>
+
+                    <!-- 可疑通話紀錄 -->
+                    <div class="mt-10">
+                        <h3 class="text-lg font-semibold text-gray-800 mb-4 text-left">可疑通話紀錄</h3>
+                        <div id="call-log-list" class="space-y-3">
+                            <!-- 範例紀錄 (防護關閉時) -->
+                            <div id="no-calls-message" class="text-center text-gray-500 p-6 bg-gray-50 rounded-lg border border-dashed border-gray-300">
+                                <i data-lucide="list-x" class="w-10 h-10 mx-auto mb-2 opacity-50"></i>
+                                <p>開啟防護後，可疑紀錄將顯示於此。</p>
+                            </div>
+
+                            <!-- 範例紀錄 (防護開啟時) -->
+                            <div class="call-log-item hidden p-4 bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition">
+                                <div class="flex justify-between items-center">
+                                    <div>
+                                        <p class="font-semibold text-gray-800">+886 912 345 678</p>
+                                        <p class="text-sm text-gray-500">2 分鐘前</p>
+                                    </div>
+                                    <div class="text-right">
+                                        <p class="font-bold text-red-600">高度可疑</p>
+                                        <p class="text-sm text-red-500">AI 偵測到可疑聲音</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="call-log-item hidden p-4 bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition">
+                                <div class="flex justify-between items-center">
+                                    <div>
+                                        <p class="font-semibold text-gray-800">未知號碼</p>
+                                        <p class="text-sm text-gray-500">1 小時前</p>
+                                    </div>
+                                    <div class="text-right">
+                                        <p class="font-bold text-yellow-600">中度可疑</p>
+                                        <p class="text-sm text-yellow-500">疑似詐騙話術</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 3. 防詐知識 (Education Tab - Enhanced Gamification) -->
+                <div id="education-tab-content" class="hidden">
+                    
+                    <!-- 用戶檔案與等級卡片 (可點擊查看所有稱號) -->
+                    <div id="profile-card" class="bg-gradient-to-r from-blue-600 to-blue-500 rounded-xl p-5 text-white shadow-lg mb-6 cursor-pointer transform transition hover:scale-[1.02] active:scale-[0.98]">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center">
+                                <div class="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center mr-3">
+                                    <i data-lucide="award" class="w-6 h-6 text-yellow-300"></i>
+                                </div>
+                                <div>
+                                    <p class="text-xs text-blue-100 uppercase tracking-wide flex items-center">
+                                        當前稱號 <i data-lucide="chevron-right" class="w-3 h-3 ml-1"></i>
+                                    </p>
+                                    <h2 id="user-title" class="text-xl font-bold text-white">初學乍練</h2>
+                                </div>
+                            </div>
+                            <div class="text-right">
+                                <p class="text-xs text-blue-100">總經驗值</p>
+                                <p id="user-xp" class="text-xl font-bold font-mono">0 XP</p>
+                            </div>
+                        </div>
+                        <!-- XP 條 -->
+                        <div class="relative w-full h-3 bg-blue-900/30 rounded-full overflow-hidden">
+                            <div id="xp-bar" class="absolute top-0 left-0 h-full bg-yellow-400 xp-bar-fill" style="width: 0%"></div>
+                        </div>
+                        <p id="next-level-text" class="text-xs text-blue-100 mt-2 text-right">距離下一級還差 50 XP</p>
+                    </div>
+
+                    <!-- 每日挑戰 (Quiz Section) -->
+                    <div class="bg-white border border-blue-200 rounded-xl p-5 shadow-sm mb-6 relative overflow-hidden">
+                        <div class="absolute top-0 right-0 bg-blue-100 text-blue-700 text-xs font-bold px-2 py-1 rounded-bl-lg flex items-center">
+                            <i data-lucide="calendar" class="w-3 h-3 mr-1"></i>
+                            <span id="daily-progress-text">0/3</span>
+                        </div>
+                        
+                        <h3 class="text-lg font-bold text-gray-800 mb-3 flex items-center">
+                            <i data-lucide="brain-circuit" class="w-5 h-5 text-blue-600 mr-2"></i>
+                            防詐隨堂考
+                        </h3>
+
+                        <div id="quiz-container">
+                            <!-- 任務完成畫面 (預設隱藏) -->
+                            <div id="mission-complete-view" class="hidden text-center py-6">
+                                <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <i data-lucide="check-circle-2" class="w-8 h-8 text-green-600"></i>
+                                </div>
+                                <h4 class="text-lg font-bold text-gray-800 mb-2">今日任務已完成！</h4>
+                                <p class="text-gray-600 text-sm mb-4">太棒了！您今天已經完成了 3 道挑戰。<br>休息一下，明天再來累積經驗吧！</p>
+                                <div class="inline-block bg-gray-100 px-4 py-2 rounded-lg text-xs text-gray-500">
+                                    系統將於明日自動重置
+                                </div>
+                            </div>
+
+                            <!-- 測驗區域 -->
+                            <div id="quiz-view">
+                                <!-- 問題 -->
+                                <p id="quiz-question" class="text-gray-700 font-medium mb-4">
+                                    正在讀取題目...
+                                </p>
+                                
+                                <!-- 選項 -->
+                                <div id="quiz-options" class="space-y-2">
+                                    <!-- 按鈕動態生成 -->
+                                </div>
+
+                                <!-- 結果反饋 -->
+                                <div id="quiz-feedback" class="hidden mt-4 p-3 rounded-lg text-sm"></div>
+                                
+                                <button id="next-question-btn" class="hidden w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition">
+                                    下一題
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 知識寶庫 (Accordion) -->
+                    <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                        <i data-lucide="book-open" class="w-5 h-5 text-gray-600 mr-2"></i>
+                        必修知識庫
+                    </h3>
+                    
+                    <div class="space-y-3">
+                        <!-- 知識 1 -->
+                        <div class="border border-gray-200 rounded-lg bg-white">
+                            <button class="w-full flex justify-between items-center p-4 text-left font-semibold text-gray-700 hover:bg-gray-50 rounded-lg focus:outline-none" onclick="toggleAccordion('k1')">
+                                <span>1. 什麼是「猜猜我是誰」詐騙？</span>
+                                <i data-lucide="chevron-down" class="w-4 h-4 text-gray-400"></i>
+                            </button>
+                            <div id="k1" class="hidden p-4 pt-0 text-gray-600 text-sm leading-relaxed border-t border-gray-100 mt-2">
+                                詐騙者假冒親友打電話，但不主動說名字，而是讓您猜。一旦您說出某個親友名字，他們就會順勢承認，並以「剛換電話」、「急需用錢」為由借錢。
+                                <br><strong class="text-blue-600">應對：</strong> 遇到沒顯示名字的來電，直接問「你是誰？」，不要幫對方對號入座。
+                            </div>
+                        </div>
+
+                        <!-- 知識 2 -->
+                        <div class="border border-gray-200 rounded-lg bg-white">
+                            <button class="w-full flex justify-between items-center p-4 text-left font-semibold text-gray-700 hover:bg-gray-50 rounded-lg focus:outline-none" onclick="toggleAccordion('k2')">
+                                <span>2. 視訊也有假的？Deepfake 變臉</span>
+                                <i data-lucide="chevron-down" class="w-4 h-4 text-gray-400"></i>
+                            </button>
+                            <div id="k2" class="hidden p-4 pt-0 text-gray-600 text-sm leading-relaxed border-t border-gray-100 mt-2">
+                                詐騙集團可以使用 AI 技術在視訊通話中即時換臉。眼見不一定為憑！
+                                <br><strong class="text-blue-600">應對：</strong> 請對方在臉前揮手、轉頭，觀察臉部邊緣有沒有模糊或破綻。或是詢問只有雙方知道的「私密問題」。
+                            </div>
+                        </div>
+
+                        <!-- 知識 3 -->
+                        <div class="border border-gray-200 rounded-lg bg-white">
+                            <button class="w-full flex justify-between items-center p-4 text-left font-semibold text-gray-700 hover:bg-gray-50 rounded-lg focus:outline-none" onclick="toggleAccordion('k3')">
+                                <span>3. 「安全帳戶」監管騙局</span>
+                                <i data-lucide="chevron-down" class="w-4 h-4 text-gray-400"></i>
+                            </button>
+                            <div id="k3" class="hidden p-4 pt-0 text-gray-600 text-sm leading-relaxed border-t border-gray-100 mt-2">
+                                假冒警察或檢察官，聲稱您的帳戶涉嫌洗錢，要求將資金轉入所謂的「公證帳戶」或「安全帳戶」進行監管。
+                                <br><strong class="text-blue-600">應對：</strong> 政府機關絕對不會要求民眾轉帳匯款。聽到「監管帳戶」直接掛斷報警。
+                            </div>
+                        </div>
+                        
+                         <!-- 知識 4 -->
+                         <div class="border border-gray-200 rounded-lg bg-white">
+                            <button class="w-full flex justify-between items-center p-4 text-left font-semibold text-gray-700 hover:bg-gray-50 rounded-lg focus:outline-none" onclick="toggleAccordion('k4')">
+                                <span>4. 設立「家庭安全暗號」</span>
+                                <i data-lucide="chevron-down" class="w-4 h-4 text-gray-400"></i>
+                            </button>
+                            <div id="k4" class="hidden p-4 pt-0 text-gray-600 text-sm leading-relaxed border-t border-gray-100 mt-2">
+                                這是最簡單也最有效的防詐手段。與家人約定一個通關密語（例如：家裡小狗的名字、或是某個特定的數字）。
+                                <br><strong class="text-blue-600">應對：</strong> 無論對方聲音、影像多像，只要答不出暗號，就是詐騙！
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="h-8"></div> <!-- 底部留白 -->
+                </div>
+
+            </main>
+
+            <!-- 底部導航欄 -->
+            <footer class="flex-shrink-0 bg-white border-t border-gray-200 shadow-inner">
+                <nav class="flex justify-around">
+                    <!-- 影片檢測按鈕 -->
+                    <button id="video-tab-button" class="nav-button active flex-1 flex flex-col items-center justify-center p-4 text-gray-600 hover:bg-gray-50 transition">
+                        <i data-lucide="video" class="w-6 h-6 mb-1"></i>
+                        <span class="text-xs font-medium">影片檢測</span>
+                    </button>
+                    <!-- 通話防護按鈕 -->
+                    <button id="call-tab-button" class="nav-button flex-1 flex flex-col items-center justify-center p-4 text-gray-600 hover:bg-gray-50 transition">
+                        <i data-lucide="phone-incoming" class="w-6 h-6 mb-1"></i>
+                        <span class="text-xs font-medium">通話防護</span>
+                    </button>
+                    <!-- 防詐知識按鈕 -->
+                    <button id="education-tab-button" class="nav-button flex-1 flex flex-col items-center justify-center p-4 text-gray-600 hover:bg-gray-50 transition">
+                        <i data-lucide="book-open-check" class="w-6 h-6 mb-1"></i>
+                        <span class="text-xs font-medium">防詐知識</span>
+                    </button>
+                </nav>
+            </footer>
+
+            <!-- 模擬通話即時介面 (Live Call Simulation Interface) -->
+            <div id="live-call-interface" class="hidden absolute inset-0 bg-gray-900 z-50 flex flex-col text-white p-6 overflow-y-auto">
+                <!-- 通話資訊 -->
+                <div class="text-center mt-4 mb-4 flex-shrink-0">
+                    <div class="w-16 h-16 bg-gray-600 rounded-full mx-auto flex items-center justify-center mb-2">
+                        <i data-lucide="user" class="w-8 h-8 text-gray-300"></i>
+                    </div>
+                    <h2 class="text-2xl font-bold">未知號碼</h2>
+                    <p class="text-gray-400" id="call-timer">00:00</p>
+                </div>
+
+                <!-- AI 懸浮球 / 分析面板 -->
+                <div class="bg-gray-800/90 backdrop-blur-sm rounded-xl border border-gray-600 p-4 mb-4 flex-grow flex flex-col relative transition-all duration-300" id="ai-panel">
+                    <!-- 頂部狀態列 -->
+                    <div class="flex items-center justify-between mb-2 border-b border-gray-700 pb-2 flex-shrink-0">
+                        <div class="flex items-center text-green-400" id="ai-status-indicator">
+                            <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse mr-2"></div>
+                            <span class="text-sm font-bold tracking-wider">AI 防護監聽中</span>
+                        </div>
+                        <i data-lucide="shield-check" class="w-5 h-5 text-green-500" id="ai-shield-icon"></i>
+                    </div>
+
+                    <!-- 即時分析內容 -->
+                    <div class="space-y-3 flex-grow flex flex-col">
+                        <!-- 聲紋波形 -->
+                        <div class="flex items-center justify-center min-h-[60px] flex-shrink-0 space-x-1.5 mb-1" id="waveform-container">
+                             <div class="w-1.5 bg-green-400 waveform-bar" style="animation-duration: 0.5s"></div>
+                             <div class="w-1.5 bg-green-400 waveform-bar" style="animation-duration: 0.7s"></div>
+                             <div class="w-1.5 bg-green-400 waveform-bar" style="animation-duration: 0.4s"></div>
+                             <div class="w-1.5 bg-green-400 waveform-bar" style="animation-duration: 0.6s"></div>
+                             <div class="w-1.5 bg-green-400 waveform-bar" style="animation-duration: 0.8s"></div>
+                             <div class="w-1.5 bg-green-400 waveform-bar" style="animation-duration: 0.5s"></div>
+                             <div class="w-1.5 bg-green-400 waveform-bar" style="animation-duration: 0.3s"></div>
+                             <div class="w-1.5 bg-green-400 waveform-bar" style="animation-duration: 0.6s"></div>
+                        </div>
+
+                        <!-- 即時檢測文字 -->
+                        <div id="live-analysis-text" class="text-sm text-gray-300 font-mono min-h-[3rem]">
+                            正在分析通話內容與聲紋特徵...
+                        </div>
+
+                        <!-- 建議行動 -->
+                        <div id="suggestion-box" class="hidden bg-blue-900/50 border border-blue-500/50 rounded p-3 animate-pulse mt-auto">
+                            <p class="text-blue-300 text-xs font-bold uppercase mb-1 flex items-center">
+                                <i data-lucide="lightbulb" class="w-3 h-3 mr-1"></i> AI 戰術指導
+                            </p>
+                            <p class="text-white font-medium text-sm" id="suggestion-text">...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 掛斷按鈕 -->
+                <div class="mt-auto flex justify-center pb-8 flex-shrink-0">
+                    <button id="end-call-button" class="w-16 h-16 bg-red-600 rounded-full flex items-center justify-center hover:bg-red-700 transition shadow-lg">
+                        <i data-lucide="phone-off" class="w-8 h-8 text-white"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 稱號一覽視窗 (Modal) -->
+            <div id="titles-modal" class="hidden absolute inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                <div class="bg-white rounded-xl w-full max-w-sm max-h-[80vh] overflow-y-auto p-5 relative">
+                    <button id="close-titles-modal" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
+                        <i data-lucide="x" class="w-6 h-6"></i>
+                    </button>
+                    
+                    <h3 class="text-xl font-bold text-gray-800 mb-4 flex items-center">
+                        <i data-lucide="trophy" class="w-6 h-6 text-yellow-500 mr-2"></i>
+                        稱號一覽表
+                    </h3>
+                    
+                    <div id="titles-list" class="space-y-3">
+                        <!-- JS 動態生成 -->
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        window.onload = function() {
+            if (typeof lucide !== 'undefined') {
+                lucide.createIcons();
+            } else {
+                console.error("Lucide library failed to load.");
+            }
+
+            const uploadState = document.getElementById('upload-state');
+            const loadingState = document.getElementById('loading-state');
+            const resultsState = document.getElementById('results-state');
+            
+            const videoUpload = document.getElementById('video-upload');
+            const resetButton = document.getElementById('reset-button');
+
+            const progressCircle = document.getElementById('progress-circle');
+            const probabilityScore = document.getElementById('probability-score');
+            const authenticityText = document.getElementById('authenticity-text');
+            const analysisDetails = document.getElementById('analysis-details');
+            const warningBox = document.getElementById('warning-box');
+            const successBox = document.getElementById('success-box');
+
+            const videoTabContent = document.getElementById('video-tab-content');
+            const callTabContent = document.getElementById('call-tab-content');
+            const educationTabContent = document.getElementById('education-tab-content');
+            
+            const videoTabButton = document.getElementById('video-tab-button');
+            const callTabButton = document.getElementById('call-tab-button');
+            const educationTabButton = document.getElementById('education-tab-button');
+
+            const toggleProtectionButton = document.getElementById('toggle-protection-button');
+            const shieldIcon = document.getElementById('shield-icon');
+            const protectionStatusText = document.getElementById('protection-status-text');
+            const noCallsMessage = document.getElementById('no-calls-message');
+            const callLogItems = document.querySelectorAll('.call-log-item');
+            const demoCallButton = document.getElementById('demo-call-button');
+
+            const liveCallInterface = document.getElementById('live-call-interface');
+            const endCallButton = document.getElementById('end-call-button');
+            const callTimer = document.getElementById('call-timer');
+            const liveAnalysisText = document.getElementById('live-analysis-text');
+            const suggestionBox = document.getElementById('suggestion-box');
+            const suggestionText = document.getElementById('suggestion-text');
+            const aiStatusIndicator = document.getElementById('ai-status-indicator');
+            const aiShieldIcon = document.getElementById('ai-shield-icon');
+            const waveformBars = document.querySelectorAll('.waveform-bar');
+
+            // --- 看板娘相關變數與函數 (更新版：固定圖片) ---
+            const mascotImg = document.getElementById('mascot-img');
+            const mascotBubble = document.getElementById('mascot-bubble');
+            
+            // 固定圖片路徑
+            const MASCOT_NORMAL = 'mascot_normal.png'; 
+            const MASCOT_THINKING = 'mascot_thinking.png';
+            
+            // 備用圖片 (網上 Placeholder)
+            const FALLBACK_NORMAL = 'https://api.dicebear.com/7.x/avataaars/svg?seed=Felix&clothing=blazerAndShirt&eyes=happy';
+            const FALLBACK_THINKING = 'https://api.dicebear.com/7.x/avataaars/svg?seed=Felix&clothing=blazerAndShirt&eyes=surprised&eyebrows=frownNatural';
+
+            // 狀態控制函數
+            function updateMascotState(state) {
+                mascotBubble.classList.remove('fade-in');
+                void mascotBubble.offsetWidth; 
+                mascotBubble.classList.add('fade-in');
+
+                switch(state) {
+                    case 'idle':
+                        mascotImg.src = MASCOT_NORMAL;
+                        mascotImg.onerror = () => mascotImg.src = FALLBACK_NORMAL;
+                        mascotBubble.textContent = getRandomTip();
+                        mascotBubble.classList.remove('text-red-600', 'border-red-500');
+                        break;
+                    case 'analyzing':
+                        mascotImg.src = MASCOT_THINKING;
+                        mascotImg.onerror = () => mascotImg.src = FALLBACK_THINKING;
+                        mascotBubble.textContent = "正在仔細檢查每一個像素...";
+                        mascotBubble.classList.remove('text-red-600', 'border-red-500');
+                        break;
+                    case 'danger':
+                        mascotImg.src = MASCOT_THINKING;
+                        mascotImg.onerror = () => mascotImg.src = FALLBACK_THINKING;
+                        mascotBubble.textContent = "小心！這裡面有很不自然的地方！";
+                        mascotBubble.classList.add('text-red-600', 'border-red-500');
+                        break;
+                    case 'safe':
+                        mascotImg.src = MASCOT_NORMAL;
+                        mascotImg.onerror = () => mascotImg.src = FALLBACK_NORMAL;
+                        mascotBubble.textContent = "看起來正常，但還是要保持警覺喔！";
+                        mascotBubble.classList.remove('text-red-600', 'border-red-500');
+                        break;
+                    case 'call-monitor':
+                        mascotImg.src = MASCOT_THINKING;
+                        mascotImg.onerror = () => mascotImg.src = FALLBACK_THINKING;
+                        mascotBubble.textContent = "我正在背景聽著，別擔心。";
+                        mascotBubble.classList.remove('text-red-600', 'border-red-500');
+                        break;
+                }
+            }
+
+            function getRandomTip() {
+                const tips = [
+                    "我是您的防詐小幫手！",
+                    "今天也要小心陌生來電喔！",
+                    "有懷疑就掛斷，沒什麼好不好意思的。",
+                    "記得和家人約定安全暗號了嗎？",
+                    "Deepfake 技術越來越進步，眼見不一定為憑。"
+                ];
+                return tips[Math.floor(Math.random() * tips.length)];
+            }
+
+            // --- 遊戲化相關變數 ---
+            const userTitleEl = document.getElementById('user-title');
+            const userXpEl = document.getElementById('user-xp');
+            const xpBar = document.getElementById('xp-bar');
+            const nextLevelText = document.getElementById('next-level-text');
+            const quizQuestionEl = document.getElementById('quiz-question');
+            const quizOptionsEl = document.getElementById('quiz-options');
+            const quizFeedbackEl = document.getElementById('quiz-feedback');
+            const nextQuestionBtn = document.getElementById('next-question-btn');
+            
+            const dailyProgressText = document.getElementById('daily-progress-text');
+            const missionCompleteView = document.getElementById('mission-complete-view');
+            const quizView = document.getElementById('quiz-view');
+            const profileCard = document.getElementById('profile-card');
+            const titlesModal = document.getElementById('titles-modal');
+            const closeTitlesModalBtn = document.getElementById('close-titles-modal');
+            const titlesList = document.getElementById('titles-list');
+
+            const TITLES = [
+                { name: "初學乍練", minXP: 0 },
+                { name: "略知皮毛", minXP: 50 },
+                { name: "漸入佳境", minXP: 100 },
+                { name: "警覺先鋒", minXP: 200 },
+                { name: "識謊行家", minXP: 350 },
+                { name: "明察秋毫", minXP: 550 },
+                { name: "火眼金睛", minXP: 800 },
+                { name: "百毒不侵", minXP: 1100 },
+                { name: "反詐宗師", minXP: 1500 },
+                { name: "守護天神", minXP: 2000 }
+            ];
+
+            const QUIZ_BANK = [
+                { q: "收到陌生人傳來的連結，說你的包裹投遞失敗，應該怎麼做？", options: ["點進去確認", "不理會，直接去官網查詢", "轉發給朋友問問"], ans: 1, explanation: "陌生連結千萬別點！可能是釣魚網站。請直接到物流官網查詢。" },
+                { q: "親友突然打視訊電話來借錢，覺得影像有點不自然，可以怎麼做？", options: ["直接匯款", "請他在臉前揮揮手、轉頭", "罵他一頓"], ans: 1, explanation: "這可能是 AI 換臉詐騙！揮手或轉頭可以讓 Deepfake 破功露出破綻。" },
+                { q: "檢察官打電話說你的帳戶涉嫌洗錢，要你把錢轉到「安全帳戶」？", options: ["立刻轉帳以示清白", "掛斷電話，撥打 165 反詐騙", "詢問檢察官名字"], ans: 1, explanation: "政府機關絕對不會要求民眾轉帳！聽到「監管帳戶」就是詐騙。" },
+                { q: "和家人約定「安全暗號」的主要目的是什麼？", options: ["好玩", "防止失智", "防止 AI 語音詐騙"], ans: 2, explanation: "正確！即便聲音一模一樣，答不出暗號就是假的。" },
+                { q: "接到電話，對方說「猜猜我是誰」，你應該？", options: ["亂猜一個名字", "直接問「你是誰？」", "順著他的話聊下去"], ans: 1, explanation: "不要讓對方有機會冒充親友，直接詢問身分，不給對方提示。" },
+                { q: "AI 能夠模仿人的聲音嗎？", options: ["可以，只要幾秒鐘素材", "不行，那是電影情節", "只能模仿機器人"], ans: 0, explanation: "現在的 AI 技術只需要短短幾秒的錄音，就能複製一個人的聲音。" },
+                { q: "網路上認識的「帥哥/美女」邀請你投資虛擬貨幣，保證獲利？", options: ["小額試試看", "這是「殺豬盤」詐騙，封鎖！", "借錢來投資"], ans: 1, explanation: "天下沒有白吃的午餐！保證獲利通常都是詐騙陷阱。" },
+                { q: "Deepfake 影片中，人物的哪個部位最容易出現破綻？", options: ["衣服顏色", "眨眼頻率和嘴型", "背景音樂"], ans: 1, explanation: "早期或粗糙的 Deepfake 影片，人物眨眼會很不自然，嘴型也可能對不上聲音。" }
+            ];
+
+            let currentUserXP = 0;
+            let dailyQuizCount = 0;
+            const DAILY_LIMIT = 3;
+
+            initUserData();
+            updateProfileUI();
+            checkDailyQuizStatus();
+
+            function initUserData() {
+                if(localStorage.getItem('deepfake_app_xp')) {
+                    currentUserXP = parseInt(localStorage.getItem('deepfake_app_xp'));
+                }
+                const today = new Date().toISOString().split('T')[0];
+                const savedState = JSON.parse(localStorage.getItem('deepfake_app_quiz_state') || '{}');
+
+                if (savedState.date === today) {
+                    dailyQuizCount = savedState.count || 0;
+                } else {
+                    dailyQuizCount = 0;
+                    saveDailyState();
+                }
+                dailyProgressText.textContent = `${dailyQuizCount}/${DAILY_LIMIT}`;
+            }
+
+            function saveDailyState() {
+                const today = new Date().toISOString().split('T')[0];
+                localStorage.setItem('deepfake_app_quiz_state', JSON.stringify({
+                    date: today,
+                    count: dailyQuizCount
+                }));
+                dailyProgressText.textContent = `${dailyQuizCount}/${DAILY_LIMIT}`;
+            }
+
+            function updateProfileUI() {
+                let currentTitleObj = TITLES[0];
+                let nextTitleObj = null;
+
+                for (let i = 0; i < TITLES.length; i++) {
+                    if (currentUserXP >= TITLES[i].minXP) {
+                        currentTitleObj = TITLES[i];
+                        nextTitleObj = TITLES[i+1] || null;
+                    } else {
+                        break;
+                    }
+                }
+
+                userTitleEl.textContent = currentTitleObj.name;
+                userXpEl.textContent = `${currentUserXP} XP`;
+
+                if (nextTitleObj) {
+                    const prevXP = currentTitleObj.minXP;
+                    const targetXP = nextTitleObj.minXP;
+                    const progress = ((currentUserXP - prevXP) / (targetXP - prevXP)) * 100;
+                    xpBar.style.width = `${Math.max(5, progress)}%`; 
+                    nextLevelText.textContent = `距離【${nextTitleObj.name}】還差 ${targetXP - currentUserXP} XP`;
+                } else {
+                    xpBar.style.width = '100%';
+                    nextLevelText.textContent = "已達到最高境界！";
+                }
+            }
+            
+            function checkDailyQuizStatus() {
+                if (dailyQuizCount >= DAILY_LIMIT) {
+                    quizView.classList.add('hidden');
+                    missionCompleteView.classList.remove('hidden');
+                } else {
+                    missionCompleteView.classList.add('hidden');
+                    quizView.classList.remove('hidden');
+                    loadRandomQuestion();
+                }
+            }
+
+            function loadRandomQuestion() {
+                quizFeedbackEl.classList.add('hidden');
+                quizFeedbackEl.className = 'hidden mt-4 p-3 rounded-lg text-sm'; 
+                nextQuestionBtn.classList.add('hidden');
+                nextQuestionBtn.textContent = '下一題'; 
+                quizOptionsEl.innerHTML = '';
+                
+                const randomIndex = Math.floor(Math.random() * QUIZ_BANK.length);
+                const qData = QUIZ_BANK[randomIndex];
+
+                quizQuestionEl.textContent = qData.q;
+
+                qData.options.forEach((opt, index) => {
+                    const btn = document.createElement('button');
+                    btn.className = "w-full text-left p-3 border border-gray-200 rounded-lg hover:bg-blue-50 transition text-gray-700 text-sm font-medium";
+                    btn.textContent = opt;
+                    btn.onclick = () => checkAnswer(index, qData.ans, qData.explanation, btn);
+                    quizOptionsEl.appendChild(btn);
+                });
+            }
+
+            function checkAnswer(selectedIndex, correctIndex, explanation, btnElement) {
+                const allBtns = quizOptionsEl.querySelectorAll('button');
+                allBtns.forEach(b => b.disabled = true);
+
+                if (selectedIndex === correctIndex) {
+                    btnElement.classList.add('bg-green-100', 'border-green-500', 'text-green-700');
+                    quizFeedbackEl.textContent = `答對了！經驗值 +10。${explanation}`;
+                    quizFeedbackEl.classList.add('bg-green-50', 'text-green-800', 'border', 'border-green-200');
+                    quizFeedbackEl.classList.remove('hidden');
+                    addXP(10);
+                    // 看板娘反應
+                    mascotBubble.textContent = "好厲害！又學會了一招！";
+                    mascotImg.src = MASCOT_NORMAL; // 答對用開心臉
+                    mascotImg.onerror = () => mascotImg.src = FALLBACK_NORMAL;
+                } else {
+                    btnElement.classList.add('bg-red-100', 'border-red-500', 'text-red-700');
+                    allBtns[correctIndex].classList.add('bg-green-100', 'border-green-500', 'text-green-700');
+                    quizFeedbackEl.textContent = `答錯了。${explanation}`;
+                    quizFeedbackEl.classList.add('bg-red-50', 'text-red-800', 'border', 'border-red-200');
+                    quizFeedbackEl.classList.remove('hidden');
+                    // 看板娘反應
+                    mascotBubble.textContent = "沒關係，學起來下次就不會被騙了！";
+                    mascotImg.src = MASCOT_THINKING; // 答錯用思考臉
+                    mascotImg.onerror = () => mascotImg.src = FALLBACK_THINKING;
+                }
+                
+                dailyQuizCount++;
+                saveDailyState();
+                
+                if (dailyQuizCount >= DAILY_LIMIT) {
+                    nextQuestionBtn.textContent = '領取今日獎勵並結束';
+                }
+                
+                nextQuestionBtn.classList.remove('hidden');
+            }
+
+            function addXP(amount) {
+                currentUserXP += amount;
+                localStorage.setItem('deepfake_app_xp', currentUserXP);
+                updateProfileUI();
+                
+                userXpEl.classList.add('text-yellow-500', 'animate-pop');
+                setTimeout(() => {
+                    userXpEl.classList.remove('text-yellow-500', 'animate-pop');
+                }, 500);
+            }
+
+            nextQuestionBtn.onclick = function() {
+                if (dailyQuizCount >= DAILY_LIMIT) {
+                    checkDailyQuizStatus(); 
+                } else {
+                    loadRandomQuestion();
+                }
+            };
+            
+            profileCard.onclick = showTitlesModal;
+            closeTitlesModalBtn.onclick = () => titlesModal.classList.add('hidden');
+            
+            titlesModal.onclick = (e) => {
+                if(e.target === titlesModal) titlesModal.classList.add('hidden');
+            };
+
+            function showTitlesModal() {
+                titlesList.innerHTML = '';
+                
+                TITLES.forEach((title, index) => {
+                    const isUnlocked = currentUserXP >= title.minXP;
+                    const isCurrent = userTitleEl.textContent === title.name;
+                    
+                    const div = document.createElement('div');
+                    div.className = `flex items-center justify-between p-3 rounded-lg border ${isUnlocked ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200 opacity-60'}`;
+                    
+                    div.innerHTML = `
+                        <div class="flex items-center">
+                            <div class="w-8 h-8 rounded-full flex items-center justify-center mr-3 ${isUnlocked ? 'bg-blue-100 text-blue-600' : 'bg-gray-200 text-gray-400'}">
+                                ${isCurrent ? '<i data-lucide="check" class="w-4 h-4"></i>' : `<span class="text-xs font-bold">${index + 1}</span>`}
+                            </div>
+                            <div>
+                                <p class="font-bold ${isUnlocked ? 'text-gray-800' : 'text-gray-500'}">${title.name}</p>
+                                <p class="text-xs ${isUnlocked ? 'text-blue-600' : 'text-gray-400'}">需求: ${title.minXP} XP</p>
+                            </div>
+                        </div>
+                        ${!isUnlocked ? '<i data-lucide="lock" class="w-4 h-4 text-gray-400"></i>' : ''}
+                    `;
+                    titlesList.appendChild(div);
+                });
+                
+                titlesModal.classList.remove('hidden');
+                if (typeof lucide !== 'undefined') lucide.createIcons();
+            }
+
+            window.toggleAccordion = function(id) {
+                const el = document.getElementById(id);
+                if (el.classList.contains('hidden')) {
+                    el.classList.remove('hidden');
+                } else {
+                    el.classList.add('hidden');
+                }
+                if (typeof lucide !== 'undefined') lucide.createIcons();
+            };
+
+            // --- 原有 App 邏輯 ---
+            let callTimerInterval;
+            let simulationInterval;
+            let seconds = 0;
+
+            const radius = progressCircle.r.baseVal.value;
+            const circumference = radius * 2 * Math.PI;
+
+            progressCircle.style.strokeDasharray = `${circumference} ${circumference}`;
+            progressCircle.style.strokeDashoffset = circumference;
+
+            function setProgress(percent) {
+                const offset = circumference - (percent / 100) * circumference;
+                progressCircle.style.strokeDashoffset = offset;
+            }
+
+            function startAnalysis() {
+                uploadState.classList.add('hidden');
+                loadingState.classList.remove('hidden');
+                resultsState.classList.add('hidden');
+                updateMascotState('analyzing'); // 看板娘思考中
+
+                setTimeout(showResults, 3000);
+            }
+
+            function showResults() {
+                loadingState.classList.add('hidden');
+                resultsState.classList.remove('hidden');
+
+                const aiProbability = Math.floor(Math.random() * 100);
+                
+                let detailsHtml = '';
+                
+                if (aiProbability >= 50) {
+                    probabilityScore.textContent = `${aiProbability}%`;
+                    authenticityText.textContent = '極高風險';
+                    
+                    probabilityScore.classList.remove('text-green-600');
+                    probabilityScore.classList.add('text-red-600');
+                    authenticityText.classList.remove('text-green-600');
+                    authenticityText.classList.add('text-red-600');
+                    progressCircle.classList.remove('text-green-500');
+                    progressCircle.classList.add('text-red-500');
+                    
+                    warningBox.classList.remove('hidden');
+                    successBox.classList.add('hidden');
+                    
+                    updateMascotState('danger'); // 看板娘警告
+
+                    const suspiciousReasons = [
+                        { text: '檢測到眼部周圍有不自然的像素偽影', desc: 'AI 生成時常在邊緣處留下痕跡。' },
+                        { text: '嘴唇動作與語音頻譜無法完全對應', desc: '可能是由靜態照片驅動生成的影片。' },
+                        { text: '背景光影與臉部光源方向不一致', desc: '合成時忽略了環境光線的影響。' },
+                        { text: '臉部微表情缺乏連貫性與隨機性', desc: 'AI 難以模擬真實人類的細微肌肉抖動。' },
+                        { text: '眨眼頻率過低或規律異常', desc: '這是 Deepfake 早期常見的特徵之一。' }
+                    ];
+
+                    const selectedReasons = suspiciousReasons.sort(() => 0.5 - Math.random()).slice(0, 3);
+
+                    selectedReasons.forEach(reason => {
+                        detailsHtml += `
+                            <li class="flex items-start p-3 bg-red-50 rounded-lg border border-red-100">
+                                <i data-lucide="alert-circle" class="w-5 h-5 text-red-500 mr-3 mt-0.5 flex-shrink-0"></i>
+                                <div>
+                                    <p class="font-bold text-gray-800 text-sm">${reason.text}</p>
+                                    <p class="text-xs text-gray-600 mt-1">${reason.desc}</p>
+                                </div>
+                            </li>
+                        `;
+                    });
+
+                } else {
+                    probabilityScore.textContent = `${aiProbability}%`;
+                    authenticityText.textContent = '低風險';
+                    
+                    probabilityScore.classList.remove('text-red-600');
+                    probabilityScore.classList.add('text-green-600');
+                    authenticityText.classList.remove('text-red-600');
+                    authenticityText.classList.add('text-green-600');
+                    progressCircle.classList.remove('text-red-500');
+                    progressCircle.classList.add('text-green-500');
+                    
+                    warningBox.classList.add('hidden');
+                    successBox.classList.remove('hidden');
+                    
+                    updateMascotState('safe'); // 看板娘放心
+
+                    const safeReasons = [
+                        { text: '臉部肌肉運動自然流暢', desc: '符合自然生理特徵。' },
+                        { text: '未檢測到明顯的合成偽影', desc: '畫面像素連續性良好。' },
+                        { text: '語音頻譜與嘴型同步率高', desc: '聲音與影像特徵吻合。' }
+                    ];
+
+                    safeReasons.forEach(reason => {
+                        detailsHtml += `
+                            <li class="flex items-start p-3 bg-green-50 rounded-lg border border-green-100">
+                                <i data-lucide="check-circle-2" class="w-5 h-5 text-green-600 mr-3 mt-0.5 flex-shrink-0"></i>
+                                <div>
+                                    <p class="font-bold text-gray-800 text-sm">${reason.text}</p>
+                                    <p class="text-xs text-gray-600 mt-1">${reason.desc}</p>
+                                </div>
+                            </li>
+                        `;
+                    });
+                }
+
+                setProgress(aiProbability);
+                analysisDetails.innerHTML = detailsHtml;
+                if (typeof lucide !== 'undefined') lucide.createIcons();
+            }
+
+            function resetApp() {
+                uploadState.classList.remove('hidden');
+                loadingState.classList.add('hidden');
+                resultsState.classList.add('hidden');
+                videoUpload.value = ''; 
+                updateMascotState('idle'); // 看板娘回歸
+            }
+
+            function switchToVideoTab() {
+                videoTabContent.classList.remove('hidden');
+                callTabContent.classList.add('hidden');
+                educationTabContent.classList.add('hidden');
+                
+                videoTabButton.classList.add('active');
+                callTabButton.classList.remove('active');
+                educationTabButton.classList.remove('active');
+                updateMascotState('idle');
+            }
+
+            function switchToCallTab() {
+                videoTabContent.classList.add('hidden');
+                callTabContent.classList.remove('hidden');
+                educationTabContent.classList.add('hidden');
+
+                videoTabButton.classList.remove('active');
+                callTabButton.classList.add('active');
+                educationTabButton.classList.remove('active');
+                updateMascotState('call-monitor');
+            }
+
+            function switchToEducationTab() {
+                videoTabContent.classList.add('hidden');
+                callTabContent.classList.add('hidden');
+                educationTabContent.classList.remove('hidden');
+
+                videoTabButton.classList.remove('active');
+                callTabButton.classList.remove('active');
+                educationTabButton.classList.add('active');
+                updateMascotState('idle');
+                
+                initUserData();
+                updateProfileUI();
+                checkDailyQuizStatus();
+                
+                if (typeof lucide !== 'undefined') lucide.createIcons();
+            }
+
+            function toggleProtection() {
+                // 原有 toggle 邏輯...
+                const buttonText = toggleProtectionButton.querySelector('span');
+                const buttonIcon = toggleProtectionButton.querySelector('i');
+                const isCurrentlyOn = toggleProtectionButton.classList.contains('bg-red-600');
+
+                if (!isCurrentlyOn) {
+                    // 開啟
+                    shieldIcon.setAttribute('data-lucide', 'shield-check');
+                    shieldIcon.classList.remove('text-gray-400');
+                    shieldIcon.classList.add('text-green-500');
+                    
+                    protectionStatusText.textContent = '防護已開啟';
+                    protectionStatusText.classList.remove('text-gray-500');
+                    protectionStatusText.classList.add('text-green-600');
+                    
+                    toggleProtectionButton.classList.remove('bg-gray-300', 'hover:bg-gray-400', 'text-gray-800');
+                    toggleProtectionButton.classList.add('bg-red-600', 'hover:bg-red-700', 'text-white');
+                    buttonText.textContent = '關閉防護';
+                    buttonIcon.setAttribute('data-lucide', 'power-off');
+
+                    noCallsMessage.classList.add('hidden');
+                    callLogItems.forEach(item => item.classList.remove('hidden'));
+                    
+                    mascotBubble.textContent = "我已經準備好隨時攔截詐騙電話了！";
+                    mascotImg.src = MASCOT_NORMAL;
+                    mascotImg.onerror = () => mascotImg.src = FALLBACK_NORMAL;
+
+                } else {
+                    // 關閉
+                    shieldIcon.setAttribute('data-lucide', 'shield-off');
+                    shieldIcon.classList.add('text-gray-400');
+                    shieldIcon.classList.remove('text-green-500');
+                    
+                    protectionStatusText.textContent = '防護已關閉';
+                    protectionStatusText.classList.add('text-gray-500');
+                    protectionStatusText.classList.remove('text-green-600');
+
+                    toggleProtectionButton.classList.add('bg-gray-300', 'hover:bg-gray-400', 'text-gray-800');
+                    toggleProtectionButton.classList.remove('bg-red-600', 'hover:bg-red-700', 'text-white');
+                    buttonText.textContent = '開啟防護';
+                    buttonIcon.setAttribute('data-lucide', 'power');
+
+                    noCallsMessage.classList.remove('hidden');
+                    callLogItems.forEach(item => item.classList.add('hidden'));
+                    
+                    mascotBubble.textContent = "防護已關閉，請小心陌生來電。";
+                }
+                if (typeof lucide !== 'undefined') lucide.createIcons();
+            }
+
+            function startDemoCall() {
+                liveCallInterface.classList.remove('hidden');
+                seconds = 0;
+                callTimer.textContent = "00:00";
+                
+                resetAIStatus();
+                updateMascotState('analyzing'); // 進入模擬通話，看板娘變嚴肅
+                
+                callTimerInterval = setInterval(() => {
+                    seconds++;
+                    const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+                    const s = (seconds % 60).toString().padStart(2, '0');
+                    callTimer.textContent = `${m}:${s}`;
+                }, 1000);
+
+                let step = 0;
+                simulationInterval = setInterval(() => {
+                    step++;
+                    runSimulationStep(step);
+                }, 2000); 
+            }
+
+            function resetAIStatus() {
+                aiStatusIndicator.querySelector('div').className = "w-2 h-2 bg-green-500 rounded-full animate-pulse mr-2";
+                aiStatusIndicator.querySelector('span').textContent = "AI 防護監聽中";
+                aiStatusIndicator.classList.remove("text-yellow-400", "text-red-400");
+                aiStatusIndicator.classList.add("text-green-400");
+                
+                aiShieldIcon.setAttribute('data-lucide', 'shield-check');
+                aiShieldIcon.className = "w-5 h-5 text-green-500";
+                
+                liveAnalysisText.textContent = "正在建立通話指紋模型...";
+                suggestionBox.classList.add('hidden');
+                
+                waveformBars.forEach(bar => {
+                    bar.classList.remove('bg-yellow-400', 'bg-red-500');
+                    bar.classList.add('bg-green-400');
+                });
+                
+                if (typeof lucide !== 'undefined') lucide.createIcons();
+            }
+
+            function runSimulationStep(step) {
+                switch(step) {
+                    case 1:
+                        liveAnalysisText.textContent = "語音活動檢測：正常\n背景噪音分析：無異常";
+                        suggestionBox.classList.remove('hidden');
+                        suggestionText.textContent = "保持冷靜，專注聽對方說話內容。";
+                        mascotBubble.textContent = "目前一切正常，我會持續監控。";
+                        break;
+                    case 2:
+                        liveAnalysisText.textContent = "偵測到關鍵字：「匯款」、「緊急」...";
+                        aiStatusIndicator.querySelector('div').className = "w-2 h-2 bg-yellow-500 rounded-full animate-pulse mr-2";
+                        aiStatusIndicator.querySelector('span').textContent = "發現可疑特徵";
+                        aiStatusIndicator.classList.remove("text-green-400");
+                        aiStatusIndicator.classList.add("text-yellow-400");
+                        aiShieldIcon.setAttribute('data-lucide', 'shield-alert');
+                        aiShieldIcon.className = "w-5 h-5 text-yellow-500";
+                        
+                        waveformBars.forEach(bar => {
+                            bar.classList.remove('bg-green-400');
+                            bar.classList.add('bg-yellow-400');
+                        });
+
+                        suggestionText.textContent = "策略：請勿立刻答應匯款。試著反問：「發生什麼事？你在哪裡？」";
+                        mascotBubble.textContent = "等等！他說到了「匯款」，這很可疑！";
+                        updateMascotState('danger');
+                        break;
+                    case 3:
+                        liveAnalysisText.textContent = "語氣分析：急促、不自然的平淡\nAI 合成可能性：45% (上升中)";
+                        suggestionText.textContent = "策略：詢問對方一個「只有家人才知道」的細節（例如：家裡小狗的名字）。";
+                        break;
+                    case 4:
+                        liveAnalysisText.textContent = "警告：檢測到語音波形重複循環 (Looping)\n這可能是預錄的 AI 語音！";
+                        suggestionText.textContent = "策略：突然打斷對方，問一個完全不相關的問題（如：今天晚餐吃什麼？）看對方反應。";
+                        mascotBubble.textContent = "聲音波形在重複！這是機器人的特徵！";
+                        break;
+                    case 5:
+                        liveAnalysisText.textContent = "AI 合成可能性：88% (極高)\n聲紋比對：不符";
+                        aiStatusIndicator.querySelector('div').className = "w-2 h-2 bg-red-600 rounded-full animate-pulse mr-2";
+                        aiStatusIndicator.querySelector('span').textContent = "危險！可能是詐騙";
+                        aiStatusIndicator.classList.remove("text-yellow-400");
+                        aiStatusIndicator.classList.add("text-red-500");
+                        aiShieldIcon.setAttribute('data-lucide', 'shield-x');
+                        aiShieldIcon.className = "w-5 h-5 text-red-500";
+                        
+                        waveformBars.forEach(bar => {
+                            bar.classList.remove('bg-yellow-400');
+                            bar.classList.add('bg-red-500');
+                        });
+                        
+                        suggestionText.textContent = "緊急策略：請立即掛斷！並直接用原本的電話號碼回撥給親人確認。";
+                        mascotBubble.textContent = "這絕對是詐騙！快掛電話！";
+                        break;
+                    case 8:
+                         clearInterval(simulationInterval);
+                         break;
+                }
+                if (typeof lucide !== 'undefined') lucide.createIcons();
+            }
+
+            function endDemoCall() {
+                liveCallInterface.classList.add('hidden');
+                clearInterval(callTimerInterval);
+                clearInterval(simulationInterval);
+                updateMascotState('idle'); // 結束通話，看板娘放鬆
+            }
+
+            videoUpload.addEventListener('change', startAnalysis);
+            resetButton.addEventListener('click', resetApp);
+            
+            videoTabButton.addEventListener('click', switchToVideoTab);
+            callTabButton.addEventListener('click', switchToCallTab);
+            educationTabButton.addEventListener('click', switchToEducationTab);
+
+            toggleProtectionButton.addEventListener('click', toggleProtection);
+            
+            demoCallButton.addEventListener('click', startDemoCall);
+            endCallButton.addEventListener('click', endDemoCall);
+
+            updateProtectionUI();
+            updateMascotState('idle');
+        };
+    </script>
+</body>
+</html>
